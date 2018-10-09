@@ -1,0 +1,716 @@
+module DisassemblyStream_cpp;
+
+/*
+   Copyright (c) 2010 Aldo J. Nunez
+
+   Licensed under the Apache License, Version 2.0.
+   See the LICENSE text file for details.
+*/
+
+import Common;
+import DisassemblyStream;
+import Program;
+import Module;
+import CodeContext;
+import SingleDocumentContext;
+// #include <udis86.h>
+import ArchData;
+import ICoreProcess;
+
+// #include <algorithm>
+
+namespace  Mago
+{
+    this.DisassemblyStream()
+    {   mScope = ( 0 );
+            mAnchorAddr = ( 0 );
+            mReadAddr = ( 0 );
+            mInvalidInstLenAtReadPtr = ( 0 );
+            mStartOfRead = ( false );
+    }
+
+    this.~DisassemblyStream()
+    {
+    }
+
+
+    //////////////////////////////////////////////////////////// 
+    // IDebugDisassemblyStream2 
+
+    void  DisassemblyStream.FillDataByteDisasmData( 
+        BYTE  dataByte, 
+        DISASSEMBLY_STREAM_FIELDS  dwFields, 
+        DisassemblyData* pDisassembly )
+    {
+        _ASSERT( pDisassembly !is  null );
+
+        if ( (dwFields & DSF_ADDRESS) != 0 )
+        {
+            wchar_t  addrStr[MaxAddrStringLength + 1] = ""w;
+
+            FormatAddress( addrStr, _countof( addrStr ), mReadAddr, mPtrSize, false );
+            pDisassembly.bstrAddress = SysAllocString( addrStr );
+            pDisassembly.dwFields |= DSF_ADDRESS;
+        }
+
+        if ( (dwFields & DSF_CODELOCATIONID) != 0 )
+        {
+            pDisassembly.uCodeLocationId = mReadAddr;
+            pDisassembly.dwFields |= DSF_CODELOCATIONID;
+        }
+
+        if ( (dwFields & DSF_OPCODE) != 0 )
+        {
+            wchar_t  opcodeStr[20 + 1] = ""w;
+
+            swprintf_s( opcodeStr, "db 0x%02X"w, dataByte );
+            pDisassembly.bstrOpcode = SysAllocString( opcodeStr );
+            pDisassembly.dwFields |= DSF_OPCODE;
+        }
+    }
+
+    void  DisassemblyStream.FillInstDisasmData( 
+        const  ud_t* ud, 
+        DISASSEMBLY_STREAM_FIELDS  dwFields, 
+        DisassemblyData* pDisassembly )
+    {
+        _ASSERT( (ud !is  null) && (pDisassembly !is  null) );
+
+        if ( (dwFields & DSF_ADDRESS) != 0 )
+        {
+            wchar_t  addrStr[MaxAddrStringLength + 1] = ""w;
+
+            FormatAddress( addrStr, _countof( addrStr ), mReadAddr, mPtrSize, false );
+            pDisassembly.bstrAddress = SysAllocString( addrStr );
+            pDisassembly.dwFields |= DSF_ADDRESS;
+        }
+
+        if ( (dwFields & DSF_CODELOCATIONID) != 0 )
+        {
+            pDisassembly.uCodeLocationId = mReadAddr;
+            pDisassembly.dwFields |= DSF_CODELOCATIONID;
+        }
+
+        if ( (dwFields & DSF_OPCODE) != 0 )
+        {
+            wchar_t  opcodeStr[200 + 1] = ""w;
+
+            MultiByteToWideChar(
+                CP_ACP,
+                0,
+                // this function should take a const ud_t*
+                ud_insn_asm( cast(ud_t*) ud ),
+                -1,
+                opcodeStr,
+                _countof( opcodeStr ) );
+
+            pDisassembly.bstrOpcode = SysAllocString( opcodeStr );
+            pDisassembly.dwFields |= DSF_OPCODE;
+        }
+
+        if ( (dwFields & DSF_CODEBYTES) != 0 )
+        {
+            uint32_t         len = ud_insn_len( cast(ud_t*) ud );
+            const  uint8_t*  bytes = ud_insn_ptr( cast(ud_t*) ud );
+            CComBSTR         hexChars = CComBSTR( len * 3 );            // 2 hex chars + 1 space
+            wchar_t *        pchar = hexChars;
+            wchar_t *        pcharEnd = pchar + hexChars.Length();
+
+            for ( uint32_t  i = 0; i < len; i++, pchar += 3 )
+            {
+                swprintf( pchar, pcharEnd - pchar, "%02X "w, bytes[i] );
+            }
+
+            pDisassembly.bstrCodeBytes = hexChars.Detach();
+            pDisassembly.dwFields |= DSF_CODEBYTES;
+        }
+
+        if ( (dwFields & DSF_DOCUMENTURL) != 0 )
+        {
+            // we want to return a filename on a document change except if 
+            // we're at the beginning of a block
+
+            if ( mStartOfRead || (mDocInfo.HasLineInfo() && mDocInfo.DocChanged()) )
+            {
+                pDisassembly.bstrDocumentUrl = mDocInfo.GetFilename();
+                if ( pDisassembly.bstrDocumentUrl !is  null )
+                    pDisassembly.dwFields |= DSF_DOCUMENTURL;
+            }
+        }
+
+        if ( (dwFields & DSF_POSITION) != 0 )
+        {
+            if ( mDocInfo.HasLineInfo() )
+            {
+                // only need to set the line info if at the beginning of an instruction
+                if ( mDocInfo.GetByteOffset() == 0 )
+                {
+                    // no source code is shown if the end column is zero
+                    // since there's no column data, span all columns
+
+                    pDisassembly.posBeg.dwLine = mDocInfo.GetLine() - 1;
+                    pDisassembly.posBeg.dwColumn = 0;
+                    pDisassembly.posEnd.dwLine = mDocInfo.GetLineEnd() - 1;
+                    pDisassembly.posEnd.dwColumn = 0xFFFFFFFF;
+                    // never show more than 8 lines of source code before asm instruction
+                    if( pDisassembly.posBeg.dwLine + 8 < pDisassembly.posEnd.dwLine )
+                        pDisassembly.posBeg.dwLine = pDisassembly.posEnd.dwLine - 8;
+                    pDisassembly.dwFields |= DSF_POSITION;
+                }
+            }
+        }
+
+        if ( (dwFields & DSF_BYTEOFFSET) != 0 )
+        {
+            if ( mDocInfo.HasLineInfo() )
+            {
+                pDisassembly.dwByteOffset = mDocInfo.GetByteOffset();
+                pDisassembly.dwFields |= DSF_BYTEOFFSET;
+            }
+        }
+
+        if ( (dwFields & DSF_FLAGS) != 0 )
+        {
+            pDisassembly.dwFlags = 0;
+            if ( mDocInfo.HasLineInfo() )
+                pDisassembly.dwFlags |= DF_HASSOURCE;
+            if ( mDocInfo.DocChanged() )
+                pDisassembly.dwFlags |= DF_DOCUMENTCHANGE;
+            pDisassembly.dwFields |= DSF_FLAGS;
+        }
+
+        if( ( dwFields & DSF_SYMBOL ) != 0 )
+        {
+            CComPtr<IDebugCodeContext2> pCodeContext;
+            HRESULT  hr = GetCodeContext( mReadAddr, &pCodeContext );
+            if( !FAILED( hr ) )
+            {
+                CONTEXT_INFO  info = { 0 };
+                hr = pCodeContext.GetInfo( CIF_FUNCTION | CIF_ADDRESSOFFSET, &info );
+                if( !FAILED( hr ) && info.bstrFunction !is  null && info.bstrAddressOffset  is  null )
+                {
+                    pDisassembly.bstrSymbol = info.bstrFunction;
+                    pDisassembly.dwFields |= DSF_SYMBOL;
+                    info.bstrFunction = null;
+                }
+                if( info.bstrFunction !is  null )
+                    SysFreeString( info.bstrFunction );
+                if( info.bstrAddressOffset !is  null )
+                    SysFreeString( info.bstrAddressOffset );
+            }
+        }
+    }
+
+    HRESULT  DisassemblyStream.Read( 
+        DWORD                      dwInstructions,
+        DISASSEMBLY_STREAM_FIELDS  dwFields,
+        DWORD*                    pdwInstructionsRead,
+        DisassemblyData*          prgDisassembly )
+    {
+        if ( (pdwInstructionsRead  is  null) || (prgDisassembly  is  null) )
+            return  E_INVALIDARG;
+
+        _RPT3( _CRT_WARN, "Read began: anchor=%08x read=%08x iInst=%d\n", 
+            mAnchorAddr, mReadAddr, dwInstructions );
+
+        HRESULT      hr = S_OK;
+        int          instWanted = std.min<DWORD>( dwInstructions, INT_MAX );
+        int          instToFind = 0;
+        int          instFound = 0;
+
+        hr = mInstCache.LoadBlocks( mReadAddr, instWanted, instToFind );
+        if ( FAILED( hr ) )
+            return  hr;
+
+        InstBlock*  block = mInstCache.GetBlockContaining( mReadAddr );
+        // nextBlock might be NULL
+        InstBlock*  nextBlock = mInstCache.GetBlockContaining( block.GetLimit() );
+        InstBlock*  blocks[2] = [ block, nextBlock ];
+        uint32_t     blockCount = (nextBlock  is  null ? 1 : 2);
+        Address64    endAddr = (nextBlock  is  null ? block.GetLimit() : nextBlock.GetLimit());
+        InstReader   reader = InstReader( blockCount, blocks, mReadAddr, endAddr, mAnchorAddr, mPtrSize, this );
+        uint32_t     instLen = 0;
+
+        // we might have already determined there were invalid instructions there
+        while ( (instFound < instToFind) && (mInvalidInstLenAtReadPtr > 0) )
+        {
+            BYTE     dataByte = 0;
+
+            if ( mReadAddr == mAnchorAddr )
+            {
+                // at the anchor, stop treating this as an invalid instruction, 
+                // and try to read a full instruction from scratch
+                mInvalidInstLenAtReadPtr = 0;
+                break;
+            }
+
+            if ( !reader.ReadByte( dataByte ) )
+                break;
+
+            FillDataByteDisasmData(
+                dataByte,
+                dwFields,
+                &prgDisassembly[instFound] );
+
+            mInvalidInstLenAtReadPtr--;
+            instFound++;
+            mReadAddr++;
+        }
+
+        mStartOfRead = true;
+        bool  symOps = ( ( dwFields & DSF_OPERANDS_SYMBOLS ) != 0 );
+
+        // update for the byte before the first one in the range, so that we 
+        // always get an accurate document change indication no matter where 
+        // we start reading
+
+        mDocInfo.Update( mReadAddr - 1 );
+
+        for ( instLen = reader.Disassemble( mReadAddr, symOps ); 
+            (instLen != 0) && (instFound < instToFind); 
+            instLen = reader.Disassemble( mReadAddr, symOps ) )
+        {
+            const  ud_t* ud = reader.GetDisasmData();
+
+            if ( ud.mnemonic != UD_Iinvalid )
+            {
+                mDocInfo.Update( mReadAddr );
+                FillInstDisasmData( ud, dwFields, &prgDisassembly[instFound] );
+                mStartOfRead = false;
+
+                instFound++;
+                mReadAddr += instLen;
+            }
+            else
+            {
+                // this function should take a const ud_t*
+                const  BYTE* buf = ud_insn_ptr( cast(ud_t*) ud );
+                uint32_t     countToHandle = 0;
+
+                if ( instLen <= cast(uint32_t) (instToFind - instFound) )
+                    countToHandle = instLen;
+                else
+                {
+                    countToHandle = instToFind - instFound;
+                    mInvalidInstLenAtReadPtr = instLen - countToHandle;
+                }
+
+                for ( uint32_t  i = 0; i < countToHandle; i++ )
+                {
+                    BYTE     dataByte = buf[i];
+
+                    FillDataByteDisasmData( 
+                        dataByte, 
+                        dwFields, 
+                        &prgDisassembly[instFound] );
+
+                    instFound++;
+                    mReadAddr++;
+                }
+            }
+        }
+
+        *pdwInstructionsRead = instFound;
+
+        _RPT3( _CRT_WARN, "Read ended: anchor=%08x read=%08x found=%d\n", 
+            mAnchorAddr, mReadAddr, instFound );
+
+        return  S_OK;
+    }
+
+    HRESULT  DisassemblyStream.Seek( 
+        SEEK_START           dwSeekStart,
+        IDebugCodeContext2* pCodeContext,
+        UINT64               uCodeLocationId,
+        INT64                iInstructions )
+    {
+        switch ( dwSeekStart )
+        {
+        case  SEEK_START_CURRENT:
+            // the read address is where we left off, so set the anchor there
+            mAnchorAddr = mReadAddr;
+            mInstCache.SetAnchor( mAnchorAddr );
+            break;
+
+        case  SEEK_START_CODECONTEXT:
+            {
+                Address64                        newAnchor = 0;
+                CComQIPtr<IMagoMemoryContext>   magoMem = pCodeContext;
+
+                if ( magoMem  is  null )
+                    return  E_INVALIDARG;
+
+                magoMem.GetAddress( newAnchor );
+
+                mAnchorAddr = newAnchor;
+                mInstCache.SetAnchor( mAnchorAddr );
+            }
+            break;
+
+        case  SEEK_START_CODELOCID:
+            if ( cast(Address64) uCodeLocationId != uCodeLocationId )
+                return  E_INVALIDARG;
+
+            mAnchorAddr = cast(Address64) uCodeLocationId;
+            mInstCache.SetAnchor( mAnchorAddr );
+            break;
+
+        case  SEEK_START_BEGIN:
+        case  SEEK_START_END:
+            return  E_NOTIMPL;
+        default: break;
+        }
+
+        _RPT3( _CRT_WARN, "Seek: anchor=%08x iInst=%I64d (seekStart=%d)\n", 
+            mAnchorAddr, iInstructions, dwSeekStart );
+
+        return  SeekOffset( iInstructions );
+    }
+
+    HRESULT  DisassemblyStream.GetCodeLocationId( 
+        IDebugCodeContext2* pCodeContext,
+        UINT64*             puCodeLocationId )
+    {
+        if ( (pCodeContext  is  null) || (puCodeLocationId  is  null) )
+            return  E_INVALIDARG;
+
+        Address64  addr = 0;
+        CComQIPtr<IMagoMemoryContext>   magoMem = pCodeContext;
+
+        if ( magoMem  is  null )
+            return  E_INVALIDARG;
+
+        magoMem.GetAddress( addr );
+        
+        *puCodeLocationId = addr;
+        return  S_OK;
+    }
+
+    bool  DisassemblyStream.GetDocContext( 
+        Address64  address, 
+        Module* mod, 
+        IDebugDocumentContext2** docContext )
+    {
+        _ASSERT( mod !is  null );
+        _ASSERT( docContext !is  null );
+
+        if ( (mod  is  null) || (docContext  is  null) )
+            return  false;
+
+        RefPtr<MagoST.ISession>        session;
+        RefPtr<SingleDocumentContext>   docCtx;
+
+        HRESULT              hr = S_OK;
+        CComBSTR             filename;
+        CComBSTR             langName;
+        GUID                 langGuid;
+        TEXT_POSITION        posBegin = { 0 };
+        TEXT_POSITION        posEnd = { 0 };
+        MagoST.FileInfo     fileInfo = { 0 };
+        MagoST.LineNumber   line = { 0 };
+        uint16_t             section = 0;
+        uint32_t             offset = 0;
+
+        if ( !mod.GetSymbolSession( session ) )
+            return  false;
+
+        section = session.GetSecOffsetFromVA( address, offset );
+        if ( section == 0 )
+            return  false;
+
+        if ( !session.FindLine( section, offset, line ) )
+            return  false;
+
+        hr = session.GetFileInfo( line.CompilandIndex, line.FileIndex, fileInfo );
+        if ( FAILED( hr ) )
+            return  false;
+
+        hr = Utf8To16( fileInfo.Name.ptr, fileInfo.Name.length, filename.m_str );
+        if ( FAILED( hr ) )
+            return  false;
+
+        // TODO:
+        //compiland->get_language();
+
+        posBegin.dwLine = line.Number;
+        posEnd.dwLine = line.NumberEnd;
+
+        // AD7 lines are 0-based, DIA ones are 1-based
+        posBegin.dwLine--;
+        posEnd.dwLine--;
+
+        hr = MakeCComObject( docCtx );
+        if ( FAILED( hr ) )
+            return  false;
+
+        hr = docCtx.Init( filename, posBegin, posEnd, langName, langGuid );
+        if ( FAILED( hr ) )
+            return  false;
+
+        hr = docCtx.QueryInterface( 
+            __uuidof( IDebugDocumentContext2 ), cast(void **) docContext );
+        if ( FAILED( hr ) )
+            return  false;
+
+        return  true;
+    }
+
+    HRESULT  DisassemblyStream.GetCodeContext( 
+        UINT64                uCodeLocationId,
+        IDebugCodeContext2** ppCodeContext )
+    {
+        _RPT1( _CRT_WARN, "DisassemblyStream::GetCodeContext: %08x\n", cast(uint) uCodeLocationId );
+
+        HRESULT              hr = S_OK;
+        Address64            addr = cast(Address64) uCodeLocationId;
+        RefPtr<CodeContext> codeContext;
+        RefPtr<Module>      mod;
+        CComPtr<IDebugDocumentContext2> docCtx;
+
+        if ( mProg.FindModuleContainingAddress( addr, mod ) )
+        {
+            GetDocContext( addr, mod, &docCtx );
+            // it's OK if doc's not found
+        }
+        // it's OK if module's not found
+
+        hr = MakeCComObject( codeContext );
+        if ( FAILED( hr ) )
+            return  hr;
+
+        hr = codeContext.Init( addr, mod, docCtx, mPtrSize );
+        if ( FAILED( hr ) )
+            return  hr;
+
+        return  codeContext.QueryInterface( 
+            __uuidof( IDebugCodeContext2 ), cast(void **) ppCodeContext );
+    }
+
+    HRESULT  DisassemblyStream.GetCurrentLocation( 
+        UINT64* puCodeLocationId )
+    {
+        if ( puCodeLocationId  is  null )
+            return  E_INVALIDARG;
+
+        *puCodeLocationId = mReadAddr;
+
+        _RPT2( _CRT_WARN, "GetCurrentLocation: anchor=%08x read=%08x\n", 
+            mAnchorAddr, mReadAddr );
+
+        return  S_OK;
+    }
+
+    HRESULT  DisassemblyStream.GetDocument( 
+        BSTR               bstrDocumentUrl,
+        IDebugDocument2** ppDocument )
+    {
+        return  E_NOTIMPL;
+    }
+
+    HRESULT  DisassemblyStream.GetScope( 
+        DISASSEMBLY_STREAM_SCOPE* pdwScope )
+    {
+        if ( pdwScope  is  null )
+            return  E_INVALIDARG;
+
+        *pdwScope = mScope;
+        return  S_OK;
+    }
+
+    HRESULT  DisassemblyStream.GetSize( 
+        UINT64* pnSize )
+    {
+        if ( pnSize  is  null )
+            return  E_INVALIDARG;
+
+        *pnSize = std.numeric_limits<uint64_t>.max();
+        return  S_OK;
+    }
+
+
+    //////////////////////////////////////////////////////////// 
+    // DisassemblyStream
+
+    HRESULT  DisassemblyStream.Init( 
+        DISASSEMBLY_STREAM_SCOPE  disasmScope, 
+        Address64  address, 
+        Program* program, 
+        IDebuggerProxy* debugger )
+    {
+        _ASSERT( program !is  null );
+
+        HRESULT  hr = S_OK;
+        ArchData*   archData = null;
+
+        archData = program.GetCoreProcess().GetArchData();
+
+        hr = mInstCache.Init( program, debugger, archData.GetPointerSize() );
+        if ( FAILED( hr ) )
+            return  hr;
+
+        mDocInfo.Init( program );
+
+        mScope = disasmScope;
+        mAnchorAddr = address;
+        mReadAddr = address;
+        mProg = program;
+        mPtrSize = archData.GetPointerSize();
+
+        mInstCache.SetAnchor( mAnchorAddr );
+
+        return  S_OK;
+    }
+
+    HRESULT  DisassemblyStream.SeekOffset( INT64  iInstructions )
+    {
+        HRESULT      hr = S_OK;
+        InstBlock*  block = null;
+        int          instWanted = cast(int) iInstructions;   // we'll test below
+        int          instAvail = 0;
+
+        if ( iInstructions < INT_MIN )
+            instWanted = INT_MIN;
+        else  if ( iInstructions > INT_MAX )
+            instWanted = INT_MAX;
+
+        // when seeking to a new place, assume we won't end up at an invalid instruction
+        mInvalidInstLenAtReadPtr = 0;
+        mReadAddr = mAnchorAddr;
+
+        hr = mInstCache.LoadBlocks( mAnchorAddr, instWanted, instAvail );
+        if ( FAILED( hr ) )
+            return  hr;
+
+        block = mInstCache.GetBlockContaining( mAnchorAddr );
+        // we already loaded it, so there should be no reason for it to fail
+        if ( block  is  null )
+            return  E_FAIL;
+
+        if ( instAvail < 0 )
+            return  SeekBack( instAvail, block );
+        else  if ( instAvail > 0 )
+            return  SeekForward( instAvail, block );
+
+        return  S_OK;
+    }
+
+    HRESULT  DisassemblyStream.SeekBack( int  iInstructions, InstBlock* block )
+    {
+        _ASSERT( block !is  null );
+        _ASSERT( iInstructions < 0 );
+
+        int          instToFind = iInstructions;
+        int          instFound = 0;
+        int32_t      virtAnchorOffset = 0;
+        int32_t      virtPos = 0;
+        Address64    baseAddr = 0;
+
+        baseAddr = block.Address - InstBlock.BlockSize;
+        virtAnchorOffset = InstBlock.BlockSize + cast(uint32_t) (mAnchorAddr - block.Address);
+        virtPos = virtAnchorOffset;
+
+        // we don't want it going all the way to the end of the range
+        if ( instToFind == INT_MIN )
+            instToFind++;
+
+        // now to actually make it make sense (no negative counts)
+        instToFind = -instToFind;
+
+        // go back one byte at a time until you reach the beginning of the block
+        // or the beginning of an instruction
+
+        for ( ; (virtPos > 0) && (instFound < instToFind); virtPos-- )
+        {
+            if ( virtPos == InstBlock.BlockSize )
+            {
+                block = mInstCache.GetBlockContaining( baseAddr );
+                if ( block  is  null )
+                    break;
+            }
+
+            int32_t  pos = virtPos % InstBlock.BlockSize;
+            BYTE     instLen = block.Map[pos - 1];
+
+            if ( instLen == 0 )
+                continue;
+
+            // Found an instruction. Is it a whole one, or do we need to 
+            // break it up into data bytes?
+
+            if ( ((virtPos - 1) + instLen) <= virtAnchorOffset )
+            {
+                instFound++;
+                mReadAddr -= instLen;
+            }
+            else
+            {
+                BYTE     byteCount = cast(BYTE) (virtAnchorOffset - virtPos + 1);
+
+                if ( byteCount <= (instToFind - instFound) )
+                {
+                    mReadAddr -= byteCount;
+                    instFound += byteCount;
+                }
+                else
+                {
+                    mReadAddr -= (instToFind - instFound);
+                    instFound = instToFind;
+                }
+            }
+        }
+
+        _RPT4( _CRT_WARN, "SeekBack ended: anchor=%08x read=%08x iInst=%d found=%d\n", 
+            mAnchorAddr, mReadAddr, iInstructions, instFound );
+
+        return  S_OK;
+    }
+
+    HRESULT  DisassemblyStream.SeekForward( int  iInstructions, InstBlock* block )
+    {
+        _ASSERT( block !is  null );
+        _ASSERT( iInstructions > 0 );
+
+        int          instToFind = iInstructions;
+        int          instFound = 0;
+
+        // nextBlock might be NULL
+        InstBlock*  nextBlock = mInstCache.GetBlockContaining( block.GetLimit() );
+        InstBlock*  blocks[2] = [ block, nextBlock ];
+        uint32_t     blockCount = (nextBlock  is  null ? 1 : 2);
+        Address64    endAddr = (nextBlock  is  null ? block.GetLimit() : nextBlock.GetLimit());
+        InstReader   reader = InstReader( blockCount, blocks, mAnchorAddr, endAddr, mAnchorAddr, mPtrSize, 0 );
+        uint32_t     instLen = 0;
+
+        for ( instLen = reader.Decode(); 
+            (instLen != 0) && (instFound < instToFind); 
+            instLen = reader.Decode() )
+        {
+            const  ud_t* ud = reader.GetDisasmData();
+
+            if ( ud.mnemonic != UD_Iinvalid )
+            {
+                instFound++;
+                mReadAddr += instLen;
+            }
+            else
+            {
+                if ( instLen <= cast(uint32_t) (instToFind - instFound) )
+                {
+                    mReadAddr += instLen;
+                    instFound += instLen;
+                }
+                else
+                {
+                    mReadAddr += instToFind - instFound;
+                    mInvalidInstLenAtReadPtr = instLen - (instToFind - instFound);
+                    instFound = instToFind;
+                }
+            }
+        }
+
+        _RPT4( _CRT_WARN, "SeekForward ended: anchor=%08x read=%08x iInst=%d found=%d\n", 
+            mAnchorAddr, mReadAddr, iInstructions, instFound );
+
+        return  S_OK;
+    }
+}
