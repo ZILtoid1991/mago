@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 2013
-VisualStudioVersion = 12.0.31101.0
+# Visual Studio 15
+VisualStudioVersion = 15.0.27703.2042
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "DebugEngine", "DebugEngine", "{A26599FF-EE45-48FF-BF60-AED141AB2325}"
 EndProject
@@ -85,6 +85,8 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MagoNatCC", "EED\MagoNatCC\MagoNatCC.vcxproj", "{C072136B-57E1-4F94-B72E-9BC71AFC1595}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "cpptest", "cpptest\win\cpptest.vcxproj", "{ED964EAB-86BC-4568-B3DE-66686C81BFF7}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mago-mi-d", "mago-mi-d\mago-mi-d.vcxproj", "{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -442,6 +444,22 @@ Global
 		{ED964EAB-86BC-4568-B3DE-66686C81BFF7}.Release|Win32.ActiveCfg = Release|Win32
 		{ED964EAB-86BC-4568-B3DE-66686C81BFF7}.Release|Win32.Build.0 = Release|Win32
 		{ED964EAB-86BC-4568-B3DE-66686C81BFF7}.Release|x64.ActiveCfg = Release|Win32
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}.Debug StaticDE|Win32.ActiveCfg = Debug|Win32
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}.Debug StaticDE|Win32.Build.0 = Debug|Win32
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}.Debug StaticDE|x64.ActiveCfg = Debug|x64
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}.Debug StaticDE|x64.Build.0 = Debug|x64
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}.Debug|Win32.ActiveCfg = Debug|Win32
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}.Debug|Win32.Build.0 = Debug|Win32
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}.Debug|x64.ActiveCfg = Debug|x64
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}.Debug|x64.Build.0 = Debug|x64
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}.Release StaticDE|Win32.ActiveCfg = Release|Win32
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}.Release StaticDE|Win32.Build.0 = Release|Win32
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}.Release StaticDE|x64.ActiveCfg = Release|x64
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}.Release StaticDE|x64.Build.0 = Release|x64
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}.Release|Win32.ActiveCfg = Release|Win32
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}.Release|Win32.Build.0 = Release|Win32
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}.Release|x64.ActiveCfg = Release|x64
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -474,5 +492,9 @@ Global
 		{00AE5920-ED5F-4A33-9330-48D1C3F2B802} = {A1310BA0-21B6-478C-AEF4-D512DEE6E4B2}
 		{18D48136-46C3-461F-958C-E5D5D86CBEC4} = {A1310BA0-21B6-478C-AEF4-D512DEE6E4B2}
 		{C072136B-57E1-4F94-B72E-9BC71AFC1595} = {57378E6E-5159-4266-B118-216BB520F80B}
+		{C6663678-D0CF-4CA3-A7A0-D4CA2B194782} = {A1310BA0-21B6-478C-AEF4-D512DEE6E4B2}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {D9A7A63A-A0A1-463D-8277-FD9837F0EDCB}
 	EndGlobalSection
 EndGlobal
