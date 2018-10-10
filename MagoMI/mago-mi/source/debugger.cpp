@@ -40,19 +40,19 @@ Debugger::Debugger()
 Debugger::~Debugger() {
 }
 
-void Debugger::writeOutput(std::wstring msg) {
+void Debugger::writeOutput(std::wstring msg) {//moved to CmdLineHandler
 	writeStdout(msg);
 }
 
-void Debugger::writeOutput(std::string msg) {
+void Debugger::writeOutput(std::string msg) {//moved to CmdLineHandler
 	writeStdout(toUtf16(msg));
 }
 
-void Debugger::writeOutput(const char * msg) {
+void Debugger::writeOutput(const char * msg) {//moved to CmdLineHandler
 	writeStdout(toUtf16(std::string(msg)));
 }
 
-void Debugger::writeOutput(const wchar_t * msg) {
+void Debugger::writeOutput(const wchar_t * msg) {//moved to CmdLineHandler
 	writeStdout(std::wstring(msg));
 }
 
@@ -114,7 +114,7 @@ void Debugger::writeErrorMessage(ulong requestId, std::wstring msg, const wchar_
 		writeStdout(msg);
 }
 
-void Debugger::showHelp() {
+void Debugger::showHelp() {//to be removed
 	wstring_vector res;
 	getCommandsHelp(res, params.miMode);
 	for (unsigned i = 0; i < res.size(); i++)
@@ -122,7 +122,7 @@ void Debugger::showHelp() {
 }
 
 /// called on new input line
-void Debugger::onInputLine(std::wstring &s) {
+void Debugger::onInputLine(std::wstring &s) {//to be removed
 	
 	CRLog::trace("Input line: %s", toUtf8(s).c_str());
 	if (s.empty())

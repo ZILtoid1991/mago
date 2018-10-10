@@ -147,10 +147,13 @@
   <ItemGroup>
     <DCompile Include="cmdinput.d" />
     <DCompile Include="cmdline.d" />
+    <DCompile Include="debugger.d" />
     <DCompile Include="logger.d" />
     <DCompile Include="mago_mi_d.d" />
     <DCompile Include="micommand.d" />
+    <DCompile Include="miengine.d" />
     <DCompile Include="miutils.d" />
+    <DCompile Include="windbg.d" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

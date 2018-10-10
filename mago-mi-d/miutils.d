@@ -4,15 +4,18 @@ public import logger;
 public import core.sys.windows.windows;
 public import core.stdc.stdlib;
 public import core.stdc.string;
+public import core.stdc.inttypes;
 public import std.utf;
 public import std.string;
 public import std.format;
 public import conv = std.conv;
+public import windbg;
 
 public import common.stringutil;
 
 static enum DEBUG_LOCK_WAIT = true;
-alias uint64_t = ulong;
+immutable uint64_t UNSPECIFIED_REQUEST_ID = 0xFFFFFFFFFFFFFFFEUL;
+
 
 class Mutex {
 	HANDLE _mutex;
@@ -127,7 +130,7 @@ public:
 				if (newSize < _size * 2)
 					newSize = _size * 2;
 			}
-			_buf = (T*)realloc(_buf, newSize * T.sizeof);
+			_buf = cast(T*)realloc(_buf, newSize * T.sizeof);
 			for (int i = _size; i < newSize; i++)
 				_buf[i] = 0; // fill with zeroes
 			_size = newSize;
@@ -150,7 +153,7 @@ public:
 		static if(S == "+="){
 			append(item);
 			return this;
-		}else static assert("Operator " ~ S ~ " not supported!");
+		}else static assert(false, "Operator " ~ S ~ " not supported!");
 	}
 	/*Buffer(T)& operator += (T item) {
 		append(item);
@@ -160,7 +163,7 @@ public:
 		static if(S == "+="){
 			append(items.c_str(), items.length());
 			return this;
-		}else static assert("Operator " ~ S ~ " not supported!");
+		}else static assert(false, "Operator " ~ S ~ " not supported!");
 	}
 	/*Buffer(T)& operator += (const Buffer & items) {
 		append(items.c_str(), items.length());
@@ -171,7 +174,7 @@ public:
 		static if(S == "+="){
 			append(items);
 			return this;
-		}else static assert("Operator " ~ S ~ " not supported!");
+		}else static assert(false, "Operator " ~ S ~ " not supported!");
 	}
 	/*Buffer(T)& operator += (const T* items) {
 		append(items);
@@ -624,17 +627,12 @@ bool looksLikeFileName(wstring s) {
 	return false;
 }
 
-interface IDebugBoundBreakpoint2{
 
-}//struct IDebugBoundBreakpoint2;
-interface IDebugPendingBreakpoint2{
-
-}
 //struct IDebugPendingBreakpoint2;
 class BreakpointInfo : RefCountedBase {
 private:
-	IDebugPendingBreakpoint2 * _pendingBreakpoint;
-	IDebugBoundBreakpoint2 * _boundBreakpoint;
+	IDebugPendingBreakpoint2* _pendingBreakpoint;
+	IDebugBoundBreakpoint2* _boundBreakpoint;
 public:
 	uint64_t id;
 	uint64_t requestId;
@@ -658,10 +656,10 @@ public:
 
 	}
 	~this(){
-		if (_pendingBreakpoint)
+		/*if (_pendingBreakpoint)
 			_pendingBreakpoint.destroy;
 		if (_boundBreakpoint)
-			_boundBreakpoint.destroy;
+			_boundBreakpoint.destroy;*/
 	}
 
 	ulong assignId(){
@@ -816,8 +814,8 @@ public:
 	}
 
 }
-class BreakpointInfoList : GCList!(BreakpointInfo) {
-	
+class BreakpointInfoList{
+	BreakpointInfo[] list;
 	this() {
 
 	}
@@ -825,20 +823,20 @@ class BreakpointInfoList : GCList!(BreakpointInfo) {
 
 	}
 	BreakpointInfoRef findById(uint64_t id){
-		for (size_t i = 0; i < size(); i++)
-			if (at(i)->id == id)
+		for (size_t i = 0; i < list.length; i++)
+			if (list[i].id == id)
 				return at(i);
 		return BreakpointInfoRef();
 	}
 	BreakpointInfoRef findByPendingBreakpoint(IDebugPendingBreakpoint2 * bp){
 		for (size_t i = 0; i < size(); i++)
-			if (at(i).getPendingBreakpoint() == bp)
+			if (list[i].getPendingBreakpoint() == bp)
 				return at(i);
 		return BreakpointInfoRef();
 	}
 	BreakpointInfoRef findByBoundBreakpoint(IDebugBoundBreakpoint2 * bp){
 		for (size_t i = 0; i < size(); i++)
-			if (at(i)->getBoundBreakpoint() == bp)
+			if (list[i].getBoundBreakpoint() == bp)
 				return at(i);
 		return BreakpointInfoRef();
 	}
@@ -1001,9 +999,7 @@ public:
 	}
 }
 
-class LocalVariableList : GCList!(LocalVariableInfo){
-	
-}
+alias LocalVariableList = LocalVariableInfo[];
 
 struct StackFrameInfo {
 	DWORD threadId;
@@ -1066,7 +1062,8 @@ public:
 	}
 }
 
-class VariableObjectList : GCList!(VariableObject){
+class VariableObjectList{
+	private VariableObject[] list;
 	this(){
 
 	}
@@ -1097,4 +1094,79 @@ class VariableObjectList : GCList!(VariableObject){
 			*pvarIndex = -1;
 		return VariableObjectRef();
 	}
+}
+/**
+ * Creates a D string from a C/C++ null terminated string.
+ */
+wstring fromWStringz(wchar* ptr)
+{
+    wstring output;
+    while (*ptr)
+    {
+        output ~= *ptr;
+        ptr++;
+    }
+    return output;
+}
+immutable(wchar)* toWStringz(const wchar[] str) @trusted pure nothrow
+{
+    out (result)
+    {
+        import core.stdc.string : strlen, memcmp;
+
+        if (result)
+        {
+            auto slen = s.length;
+            while (slen > 0 && s[slen - 1] == 0)
+                --slen;
+            assert(strlen(result) == slen);
+            assert(result[0 .. slen] == s[0 .. slen]);
+        }
+    }
+    do
+    {
+        import std.exception : assumeUnique;
+
+        /+ Unfortunately, this isn't reliable.
+     We could make this work if string literals are put
+     in read-only memory and we test if s[] is pointing into
+     that.
+     /* Peek past end of s[], if it's 0, no conversion necessary.
+     * Note that the compiler will put a 0 past the end of static
+     * strings, and the storage allocator will put a 0 past the end
+     * of newly allocated char[]'s.
+     */
+     char* p = &s[0] + s.length;
+     if (*p == 0)
+     return s;
+     +/
+
+        // Need to make a copy
+        auto copy = new char[s.length + 1];
+        copy[0 .. s.length] = s[];
+        copy[s.length] = 0;
+
+        return  & assumeUnique(copy)[0];
+    }
+}
+
+
+/++ Ditto +/
+immutable(wchar)* toStringz(return scope wstring s) @trusted pure nothrow
+{
+    if (s.empty) return "".ptr;
+    /* Peek past end of s[], if it's 0, no conversion necessary.
+     * Note that the compiler will put a 0 past the end of static
+     * strings, and the storage allocator will put a 0 past the end
+     * of newly allocated char[]'s.
+     */
+    immutable p = s.ptr + s.length;
+    // Is p dereferenceable? A simple test: if the p points to an
+    // address multiple of 4, then conservatively assume the pointer
+    // might be pointing to a new block of memory, which might be
+    // unreadable. Otherwise, it's definitely pointing to valid
+    // memory.
+    if ((cast(size_t) p & 3) && *p == 0)
+        return &s[0];
+    return toStringz(cast(const char[]) s);
 }

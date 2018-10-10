@@ -7,16 +7,13 @@ import std.string;
 import std.utf;
 
 /// input callback interface
-class CmdInputCallback
+interface CmdInputCallback
 {
-public:
-	 ~ CmdInputCallback()
-	{
-	}
+
 	/// called on new input line
-	void onInputLine(ref wstring s) = 0;
+	void onInputLine(ref wstring s);
 	/// called when ctrl+c or ctrl+break is called
-	void onCtrlBreak() = 0;
+	void onCtrlBreak();
 };
 
 /// console or redirected stdin input
@@ -24,7 +21,7 @@ public:
 class CmdInput
 {
 private:
-	CmdInputCallback* _callback;
+	CmdInputCallback _callback;
 	bool _inConsole;
 	bool _closed;
 	bool _enabled;
@@ -62,7 +59,7 @@ public:
 	{
 		if (_inConsole)
 			return;
-		TimeCheckedGuardedArea area(_consoleGuard, "stdin poll");
+		TimeCheckedGuardedArea area = new TimeCheckedGuardedArea(_consoleGuard, "stdin poll");
 		if (_enabled && !_readlinePromptShown)
 		{
 			HANDLE h_out = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -96,7 +93,7 @@ public:
 		if (_inConsole)
 			return false;
 		// check status
-		TimeCheckedGuardedArea area(_consoleGuard, "isClosed");
+		TimeCheckedGuardedArea area = new TimeCheckedGuardedArea(_consoleGuard, "isClosed");
 		HANDLE h_in = GetStdHandle(STD_INPUT_HANDLE);
 		if (h_in && h_in != INVALID_HANDLE_VALUE)
 		{
@@ -120,7 +117,7 @@ public:
 			wchar_t* line = NULL;
 			int res = READLINE_ERROR;
 			{
-				TimeCheckedGuardedArea area(_consoleGuard, "readline_poll");
+				TimeCheckedGuardedArea area = new TimeCheckedGuardedArea(_consoleGuard, "readline_poll");
 				res = readline_poll("(gdb) ", &line);
 				if (res == READLINE_IN_PROGRESS)
 					_readlineEditActive = true;
@@ -143,7 +140,7 @@ public:
 				//wprintf(L"Ctrl+C is pressed\n");
 				if (_callback)
 				{
-					_callback -  > onCtrlBreak();
+					_callback.onCtrlBreak();
 				}
 			}
 			else if (res == READLINE_ERROR)
@@ -232,12 +229,11 @@ public:
 		}
 		if (isClosed())
 		{
-		CRLog:
-			 : trace("input is closed");
+		CRLog.trace("input is closed");
 		}
 		return !isClosed();
 	}
-};
+}
 
 /// global cmd input object
 static CmdInput _cmdinput;
@@ -245,13 +241,13 @@ static CmdInput _cmdinput;
 /// write line to stdout, returns false if writing is failed
 bool writeStdout(wstring s)
 {
-	TimeCheckedGuardedArea area(_consoleGuard, "writeStdout");
+	TimeCheckedGuardedArea area = new TimeCheckedGuardedArea(_consoleGuard, "writeStdout");
 	HANDLE h_out = GetStdHandle(STD_OUTPUT_HANDLE);
 	WstringBuffer buf;
 	std.string lineNoEol = toUtf8(s);
 	CRLog._debug("STDOUT: %s", lineNoEol.c_str());
 	buf = s;
-	buf += L"\r\n";
+	buf += "\r\n"w;
 	if (_cmdinput.inConsole())
 	{
 		if (_readlineEditActive)
@@ -270,8 +266,7 @@ bool writeStdout(wstring s)
 	}
 	else
 	{
-	std:
-		 : string line = toUtf8(buf.wstr());
+		string line = toUtf8(buf.wstr());
 		DWORD bytesWritten = 0;
 		//printf("line to write: %s", line.c_str());
 		bool res = WriteFile(h_out, line.c_str(), line.length(), &bytesWritten, NULL) != 0;
@@ -287,13 +282,12 @@ bool writeStdout(wstring s)
 /// write line to stderr, returns false if writing is failed
 bool writeStderr(wstring s)
 {
-	TimeCheckedGuardedArea area(_consoleGuard, "writeStderr");
+	TimeCheckedGuardedArea area = new TimeCheckedGuardedArea(_consoleGuard, "writeStderr");
 	HANDLE h_out = GetStdHandle(STD_ERROR_HANDLE);
 	WstringBuffer buf;
 	buf = s;
-	buf += L"\r\n";
-std:
-	 : string line = toUtf8(buf.wstr());
+	buf += "\r\n"w;
+	string line = toUtf8(buf.wstr());
 	if (_cmdinput.inConsole())
 	{
 		// erase current edit line

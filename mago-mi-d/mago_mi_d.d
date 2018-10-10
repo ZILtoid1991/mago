@@ -31,7 +31,7 @@ int main(wstring[] args)
 	parseCommandLine(args);
 
 //#ifdef _DEBUG
-	/+debug{
+	debug{
 		if (!CRLog.isLoggerSet()) {
 			CRLog.setFileLogger(toUtf8(logFileName).c_str(), true);
 			CRLog.setLogLevel(CRLog.LL_TRACE);
@@ -45,15 +45,18 @@ int main(wstring[] args)
 				CRLog.setLogLevel(CRLog.LL_DEBUG);
 			}
 		}
-	}+/
+	}
 //#endif
 //#endif
 
 	//testEngine();
-
+	
 	//Debugger debugger;
 	//int res = debugger.enterCommandLoop();
-	int res;
+	int res = Debugger_Init();
+	if(!res){
+		Debugger_enterCommandLoop();
+	}
 
 	params.clear();
 	return res;
